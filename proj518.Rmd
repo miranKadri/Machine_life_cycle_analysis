@@ -1,0 +1,205 @@
+---
+title: "Analysis on machine's lifecycle"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Importing necessary libraries.
+
+```{r}
+
+library(mlbench)
+library(ggplot2)
+library(ggforce)
+```
+
+```{r}
+data <- read.csv("proj518.csv", head = TRUE, sep=";")
+head(data)
+```
+
+```{r}
+names(data)
+```
+
+```{r}
+print(ncol(data))
+print(nrow(data))
+
+```
+
+```{r message=FALSE, warning=FALSE}
+ str(data)
+```
+
+*We have in total five numerical columns, among two are having integer datatype. broken is our target column, it's a categorical columns with only two classes, "0" and "1".*
+
+*"1" stands for broken "0" stands for not broken.*
+
+# Now, lets get the statistical summary of the dataset.
+
+```{r}
+summary(data)  
+
+
+```
+
+### We have Two categorical columns in the features "team" and "provider". Let's check categories for each.
+
+```{r}
+unique(data$team)
+```
+
+```{r}
+unique(data$provider)
+```
+
+### Let's encode these columns into numerically categorized columns.
+
+```{r}
+data$team = factor(data$team,
+                   levels = c('TeamA', 'TeamC', 'TeamB'),                                              labels = c(0, 1, 2))
+```
+
+```{r}
+data$provider = factor(data$provider,
+
+                                                levels = c('Provider4', 'Provider1', 'Provider2','Provider3'),
+
+                                                labels = c(0, 1, 2, 3))
+
+```
+
+### Lets check the data again to make sure if the changes got applied or not.
+
+```{r message=FALSE, warning=FALSE}
+head(data)
+```
+
+*And yes the encodings were applied to the dataset. Now, we can test if these columns have any direct relation with the target or not.*
+
+*But, before that let's check the distribution of the data with respect to the target values(i.e. '0' or '1') the outliers present in our dataset.*
+
+```{r}
+
+plot( factor(data$broken), data$moistureInd )
+
+```
+
+Moisture is nearly equally distributed in both categories, with slight differences between the values of mean, Q1, Q3, etc.
+
+```{r}
+plot(factor(data$broken), data$pressureInd)
+```
+
+```{r}
+plot(factor(data$broken),data$temperatureInd)
+```
+
+```{r message=FALSE, warning=FALSE}
+plot(factor(data$broken),data$lifetime)
+```
+
+*In the above graph we can clearly see the relationship between life time of the machine and expected state of it. Clearly we can say that for machine whose lifetime has exceeded 60 years, there is a chance it may break ofcouse other factors will play their fair role in deciding that.*
+
+*It is evident from the the above graphs that they are outliers present in the numerical columns except lifetime, we shall remove these outliers.*
+
+### Let's create functions to remove outliers.
+
+```{r}
+outliers <- function(x) {
+
+  Q1 <- quantile(x, probs=.25)
+  Q3 <- quantile(x, probs=.75)
+  iqr = Q3-Q1
+
+ upper_limit = Q3 + (iqr*1.5)
+ lower_limit = Q1 - (iqr*1.5)
+
+ x > upper_limit | x < lower_limit
+}
+
+remove_outliers <- function(df, cols = names(df)) {
+  for (col in cols) {
+    df <- df[!outliers(df[[col]]),]
+  }
+  df
+}
+```
+
+### Now applying these functions to remove outliers from the columns we found outliers in.
+
+```{r}
+data = remove_outliers(data, c("lifetime","pressureInd","moistureInd","temperatureInd"))
+```
+
+#### Now, go back to the plotting part and check for the outliers.
+
+```{r}
+train <- data[,which(names(data)!= "broken")]
+train
+
+```
+
+```{r}
+#Creating partitioning.
+library(caTools)
+sample <- sample.split(data$broken, SplitRatio = 0.7)
+train_data <- subset(data, sample == TRUE)
+test_data <- subset(data, sample == FALSE)
+str(test_data)  
+
+```
+
+```{r}
+plot(data$lifetime,data$provider, pch = 21,
+     bg = "red",   # Fill color
+     col = "blue", # Border color
+     cex = 1,      # Symbol size
+     lwd = 1)      # Border width
+```
+
+There is some relation found between provider and the lifetime. Specifically machines from "provider3" do not reach the lifetime of 80yrs mark while others do machines from "provider2" go even further.
+
+```{r}
+plot(data$lifetime,data$broken, pch = 21,
+     bg = "red",   # Fill color
+     col = "blue", # Border color
+     cex = 1,      # Symbol size
+     lwd = 1)      # Border width
+```
+
+It is evident from the data that machines die out after they have crossed 60 mark.
+
+### Now, lets try out logistic regression model.
+
+```{r}
+simple_logistic_model <- glm(data = train_data,
+                            broken ~ lifetime + pressureInd +  moistureInd + temperatureInd,
+                            family = binomial())
+```
+
+```{r}
+summary(simple_logistic_model)
+```
+
+```{r}
+probs <- predict(simple_logistic_model, test_data, type="response")
+pred_target <- ifelse(probs > 0.5, 1, 0)
+```
+
+```{r}
+pred_target
+```
+
+Now, lets check the accuracy of our model to see how well it is performing...
+
+```{r}
+# Model accuracy
+mean(pred_target == test_data$broken)*100
+```
+
+We got almost 80% accuracy score for our model applied on the cleaned dataset.
+
+Now, you can try to add or remove some features and see what effect does it has on the model.
